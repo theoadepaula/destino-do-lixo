@@ -120,7 +120,7 @@ O que deveria mostrar:
 ## 7. Pendências
 
 - [ ] Revisão do Théo no artigo e decisão da data.
-- [ ] Repositório público `theoadepaula/destino-do-lixo`: git local com o 1º commit (2026-11-01); falta `gh repo create theoadepaula/destino-do-lixo --public --source . --push`. O rodapé do artigo já aponta para ele.
+- [x] Repositório público https://github.com/theoadepaula/destino-do-lixo, criado em 2026-11-01. O rodapé do artigo aponta para ele.
 - [ ] Painel (§6).
 - [ ] Trocar a rampa do mapa pela do theoviz quando existir.
 - [ ] Pauta possível, não escrita: comparar com 2010 exige compatibilizar setores.
