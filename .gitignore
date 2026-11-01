@@ -1,0 +1,7 @@
+dados/cache_censobr/
+.Rhistory
+.RData
+.Rproj.user/
+.Renviron
+.env
+*.log
