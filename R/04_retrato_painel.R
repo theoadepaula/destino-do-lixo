@@ -20,7 +20,14 @@ p <- m |>
             moradores_queima = as.integer(mor_queimado),
             p_coleta = round(p_coleta, 4), p_queima = round(p_queima, 4),
             p_rede_esgoto = round(p_rede, 4), p_rural = round(p_rural, 4),
-            lacuna_sigilo = as.integer(lacuna_celula))
+            lacuna_sigilo = as.integer(lacuna_celula),
+            # contagens do lado rural (situacao do setor); o urbano e o total
+            # menos o rural. Esgoto com o proprio total, como p_rede_esgoto.
+            rural_domicilios = as.integer(rur_total), rural_queimado = as.integer(rur_queimado),
+            rural_coleta = as.integer(rur_coleta),
+            esgoto_total = as.integer(esg_total), esgoto_rede = as.integer(esg_rede),
+            rural_esgoto_total = as.integer(rur_esg_total),
+            rural_esgoto_rede = as.integer(rur_esg_rede))
 
 stopifnot(nrow(p) == 5570, !anyDuplicated(p$code_muni))
 f <- file.path(RAIZ, "dados", "painel_muni_lixo.parquet")

@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preload" href="malha/br.json" as="fetch" crossorigin="anonymous">
+<title>Para onde vai o lixo, município por município — Censo 2022</title>
+
+<!--
+  Painel do destino do lixo (Censo 2022, por município).
+
+  Mesmo idioma dos outros painéis do site: HTML autocontido, dados embutidos em
+  JSON, mapa em SVG desenhado à mão, nenhum script externo. A malha vem de
+  malha/br.json (o país, 0,01°) e de malha/uf-XX.json (uma UF, 0,001°), esta
+  só quando a UF é escolhida.
+
+  NÃO edite o index.html publicado — ele é gerado. Edite este modelo
+  (destino-do-lixo/painel/modelo.html) e rode R/05_painel.R, que troca o
+  marcador da linha `__DADOS__` pelo JSON.
+
+  Cores: tokens do site (DESIGN.md) e theoviz modo escuro. A rampa do mapa é a
+  RAMPA de R/tema.R, a mesma do artigo, validada só sobre fundo escuro — por
+  isso este painel não tem modo claro.
+-->
+
+<style>
+  @font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap;
+               src: url(fontes/ibm-plex-sans-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap;
+               src: url(fontes/ibm-plex-sans-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap;
+               src: url(fontes/ibm-plex-mono-latin-400-normal.woff2) format("woff2"); }
+
+  :root {
+    color-scheme: dark;
+    --night: #0d1014; --panel: #141920; --line: #1e242c; --rule: #2c333c;
+    --control: #616a75;
+    --fg: #dde1e6; --soft: #a9b0b8; --mid: #828a93; --muted: #7d858e;
+    --brand: #cfae72; --brand-hover: #e3c88d;
+    --s1: #3987e5; --s4: #c98500;            /* theoviz, modo escuro */
+    --r1: #184f95; --r2: #256abf; --r3: #3987e5; --r4: #6da7ec; --r5: #b7d3f6;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--night); color: var(--soft); }
+  body { font: 400 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 72rem; margin: 0 auto; padding: 1rem clamp(.75rem, 3vw, 1.5rem) 3rem;
+          display: flex; flex-direction: column; gap: 1rem; }
+  .rotulo { font: 400 10.5px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+            color: var(--muted); margin: 0; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  a { color: var(--brand); text-underline-offset: 2px; }
+  a:hover { color: var(--brand-hover); }
+  h2 { font-size: 1rem; font-weight: 600; color: var(--fg); margin: 0; line-height: 1.3; }
+  h3.rotulo { margin: 1.4rem 0 .5rem; }
+
+  /* --- controles --- */
+  .controles { display: grid; gap: .6rem; grid-template-columns: 1fr 1fr; }
+  .controles .busca { grid-column: 1 / -1; }
+  @media (min-width: 760px) { .controles { grid-template-columns: 11rem 13rem 1fr; }
+                              .controles .busca { grid-column: auto; } }
+  .ctl { display: flex; flex-direction: column; gap: .3rem; position: relative; min-width: 0; }
+  select, input[type="search"] {
+    font: 400 15px/1.5 var(--sans); color: var(--fg); background: var(--panel);
+    border: 1px solid var(--control); border-radius: 0; padding: .5rem .7rem; width: 100%;
+    min-height: 44px;
+  }
+  select:focus-visible, input:focus-visible, button:focus-visible, th button:focus-visible {
+    outline: 2px solid var(--brand); outline-offset: 1px; }
+  input[type="search"]:focus { border-color: var(--brand); outline: none; }
+  .sugestoes { position: absolute; top: 100%; left: 0; right: 0; z-index: 20; margin: 0;
+               padding: 0; list-style: none; background: var(--panel);
+               border: 1px solid var(--control); border-top: 0; max-height: 18rem; overflow-y: auto; }
+  .sugestoes[hidden] { display: none; }
+  .sugestoes li { padding: .55rem .7rem; cursor: pointer; color: var(--soft); }
+  .sugestoes li[aria-selected="true"], .sugestoes li:hover { background: var(--line); color: var(--fg); }
+  .sugestoes .uf { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin-left: .35rem; }
+
+  /* --- grade principal --- */
+  .grade { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .grade { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); } }
+  .card { background: var(--panel); padding: 1.25rem; min-width: 0; }
+  @media (max-width: 480px) { .card { padding: 1rem .85rem; } }
+
+  /* --- mapa --- */
+  .mapa-topo { display: flex; flex-direction: column; gap: .2rem; margin-bottom: .75rem; }
+  .legenda { display: flex; flex-wrap: wrap; gap: 0; margin: .25rem 0 .75rem; padding: 0; list-style: none; }
+  .legenda li { flex: 1 1 0; min-width: 3.6rem; font: 400 11px/1.3 var(--mono); color: var(--muted); }
+  .legenda li::before { content: ""; display: block; height: 9px; background: var(--c); margin-bottom: .3rem; }
+  .legenda li.lacuna { flex: 0 0 auto; padding-left: .6rem; }
+  .legenda li.lacuna::before { width: 1.6rem; }
+  .mapa { position: relative; }
+  #mapa { display: block; width: 100%; height: auto; max-height: 72vh; touch-action: pan-y;
+          user-select: none; -webkit-user-select: none; }
+  #mapa.zoom { touch-action: none; cursor: grab; }
+  #mapa.arrastando { cursor: grabbing; }
+  #mapa:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  #mapa path.m { stroke: none; cursor: pointer; fill-rule: evenodd; }
+  #mapa.uf path.m, #mapa.perto path.m { stroke: var(--panel); stroke-width: .5; vector-effect: non-scaling-stroke; }
+  .zoom-ctl { position: absolute; top: 0; right: 0; display: flex; flex-direction: column; gap: 4px; z-index: 5; }
+  .zoom-ctl button { width: 44px; height: 44px; border-radius: 0; border: 1px solid var(--control);
+                     background: var(--panel); color: var(--fg); font: 400 20px/1 var(--mono); cursor: pointer;
+                     display: flex; align-items: center; justify-content: center; padding: 0; }
+  .zoom-ctl button:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+  .zoom-ctl button:disabled { color: var(--control); cursor: default; }
+  .zoom-ctl svg { width: 20px; height: 20px; }
+  .dica-teclado { font-size: 12px; color: var(--muted); margin: .35rem 0 0; }
+  #mapa .fronteira { fill: none; stroke: var(--panel); stroke-width: 1; vector-effect: non-scaling-stroke;
+                     pointer-events: none; }
+  #mapa .realce { fill: none; stroke: var(--fg); stroke-width: 1.5; vector-effect: non-scaling-stroke;
+                  pointer-events: none; }
+  #mapa .escolhido { fill: none; stroke: var(--brand); stroke-width: 2.5; vector-effect: non-scaling-stroke;
+                     pointer-events: none; }
+  .carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+                color: var(--muted); font: 400 12.5px var(--mono); }
+  .carregando[hidden] { display: none; }
+  .dica { position: fixed; z-index: 30; pointer-events: none; background: var(--panel); color: var(--soft);
+          border: 1px solid var(--rule); padding: 7px 10px; font-size: 12.5px; line-height: 1.45;
+          max-width: 16rem; opacity: 0; }
+  .dica b { color: var(--fg); font-weight: 600; }
+  .dica.on { opacity: 1; }
+  .faixa-escolha { margin-top: .6rem; font-size: 14px; color: var(--soft); min-height: 1.5em; }
+  .faixa-escolha b { color: var(--fg); font-weight: 600; }
+  .fonte { font-size: 12px; color: var(--muted); margin: .6rem 0 0; }
+
+  /* --- ficha --- */
+  .ficha-topo { display: flex; justify-content: space-between; gap: .75rem; align-items: flex-start; }
+  .limpar { font: 400 12.5px var(--mono); color: var(--muted); background: none; border: 1px solid var(--control);
+            border-radius: 0; padding: .3rem .55rem; cursor: pointer; white-space: nowrap; min-height: 32px; }
+  .limpar:hover { color: var(--brand); border-color: var(--brand); }
+  .limpar[hidden] { display: none; }
+  .ficha-sub { font-size: 13px; color: var(--mid); margin: .15rem 0 0; }
+  .heroi { display: flex; align-items: baseline; gap: .1rem .75rem; flex-wrap: wrap; margin: 1rem 0 .25rem; }
+  .heroi .n { font: 400 clamp(2.4rem, 7vw, 3.4rem)/1 var(--mono); color: var(--fg); letter-spacing: -.02em; }
+  .heroi .t { color: var(--soft); max-width: 18ch; line-height: 1.3; }
+  .heroi-sub { font-size: 13.5px; color: var(--mid); margin: .35rem 0 0; }
+
+  /* campo e cidade: barras num eixo só, de 0 a 100%, rótulo direto em cada uma */
+  .cc-titulo { font-size: 1.05rem; font-weight: 600; color: var(--fg); margin: .35rem 0 .3rem; line-height: 1.35; }
+  .cc-titulo .num { font-weight: 400; }
+  .cc-explica { font-size: 13px; color: var(--mid); margin: 0 0 .9rem; }
+  .cc-grupo { margin: 0 0 .85rem; }
+  .cc-grupo > p { margin: 0 0 .3rem; font-size: 13px; color: var(--soft); }
+  .cc-grupo.forte > p { color: var(--fg); font-weight: 600; }
+  .cc-linha { display: grid; grid-template-columns: 8.4rem 1fr 3.4rem; gap: .6rem; align-items: center;
+              min-height: 2.1rem; }
+  .cc-rot { font-size: 13px; color: var(--soft); line-height: 1.2; }
+  .cc-rot small { display: block; font: 400 10.5px/1.3 var(--mono); color: var(--muted); white-space: nowrap; }
+  .cc-trilho { position: relative; height: 12px; background: var(--line); }
+  .cc-barra { position: absolute; inset: 0 auto 0 0; }
+  .cc-val { font: 400 13px var(--mono); color: var(--fg); text-align: right; }
+  .cc-linha.so-contagem { grid-template-columns: 4.5rem 1fr 3.4rem; }
+  .cc-n { font: 400 12.5px var(--mono); color: var(--soft); white-space: nowrap; }
+  .cc-sem { grid-column: 2 / 4; font-size: 12.5px; color: var(--muted); font-style: italic; }
+  .cc-eixo { display: grid; grid-template-columns: 8.4rem 1fr 3.4rem; gap: .6rem; }
+  .cc-eixo div { display: flex; justify-content: space-between; font: 400 10.5px var(--mono); color: var(--muted); }
+  .nota { font-size: 12.5px; color: var(--mid); margin: .5rem 0 0; }
+
+  /* tabelas */
+  .tab-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { padding: .42rem .5rem; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; white-space: normal; }
+  th { font: 400 10.5px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+       border-bottom-color: var(--rule); vertical-align: bottom; }
+  td { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--soft); }
+  td:first-child { font-family: var(--sans); }
+  tr.forte td { color: var(--fg); }
+  tr.forte td:first-child { font-weight: 600; }
+  tr.sep td { border-top: 1px solid var(--rule); }
+  .destinos td:first-child { font-size: 13px; }
+  th button { all: unset; cursor: pointer; }
+  th button:hover { color: var(--fg); }
+  th[aria-sort="ascending"] button::after { content: " ↑"; color: var(--brand); }
+  th[aria-sort="descending"] button::after { content: " ↓"; color: var(--brand); }
+  .lista { max-height: 28rem; overflow-y: auto; }
+  .lista thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  .lista tbody tr { cursor: pointer; }
+  .lista tbody tr:hover td { color: var(--fg); }
+  .lista tbody tr.ativo td { color: var(--brand); }
+  .lista td:first-child .uf { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-left: .3rem; }
+
+  footer { font-size: 13px; color: var(--mid); display: flex; flex-direction: column; gap: .5rem; }
+  footer p { margin: 0; max-width: 72ch; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+
+<div class="wrap">
+
+  <div class="controles" role="search">
+    <div class="ctl">
+      <label class="rotulo" for="sel-uf">Onde</label>
+      <select id="sel-uf"><option value="">Brasil</option></select>
+    </div>
+    <div class="ctl">
+      <label class="rotulo" for="sel-ind">O mapa mostra</label>
+      <select id="sel-ind"></select>
+    </div>
+    <div class="ctl busca">
+      <label class="rotulo" for="busca">Município</label>
+      <input id="busca" type="search" placeholder="Digite o nome" autocomplete="off"
+             role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes">
+      <ul id="sugestoes" class="sugestoes" role="listbox" hidden></ul>
+    </div>
+  </div>
+
+  <div class="grade">
+    <section class="card" aria-labelledby="titulo-mapa">
+      <div class="mapa-topo">
+        <h2 id="titulo-mapa"></h2>
+        <p class="ficha-sub" id="sub-mapa"></p>
+      </div>
+      <ul class="legenda" id="legenda" aria-label="Legenda do mapa"></ul>
+      <div class="mapa">
+        <svg id="mapa" role="img" tabindex="0" aria-labelledby="titulo-mapa" aria-describedby="dica-teclado"></svg>
+        <div class="zoom-ctl" role="group" aria-label="Zoom do mapa">
+          <button type="button" id="z-mais" aria-label="Aproximar">+</button>
+          <button type="button" id="z-menos" aria-label="Afastar">−</button>
+          <button type="button" id="z-tudo" aria-label="Ver o Brasil inteiro" title="Ver o Brasil inteiro">
+            <svg viewBox="0 0 20 20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/></svg></button>
+        </div>
+        <div class="carregando" id="carregando">carregando a malha…</div>
+      </div>
+      <p class="faixa-escolha" id="faixa-escolha" aria-live="polite"></p>
+      <p class="dica-teclado" id="dica-teclado">Arraste para mover; roda do mouse ou pinça para
+        aproximar. Com o mapa em foco, + e − aproximam e as setas movem.</p>
+      <p class="fonte">Fonte: IBGE, Censo Demográfico 2022, via <code>censobr</code>;
+        malha municipal 2022 via <code>geobr</code> (Ipea).</p>
+    </section>
+
+    <section class="card" id="ficha" aria-live="polite" aria-labelledby="ficha-nome">
+      <div class="ficha-topo">
+        <div>
+          <p class="rotulo" id="ficha-tipo"></p>
+          <h2 id="ficha-nome"></h2>
+          <p class="ficha-sub" id="ficha-sub"></p>
+        </div>
+        <button class="limpar" id="limpar" type="button" hidden>limpar</button>
+      </div>
+      <div class="heroi"><span class="n" id="heroi-n"></span>
+        <span class="t" id="heroi-t"></span></div>
+      <p class="heroi-sub" id="heroi-sub"></p>
+
+      <h3 class="rotulo">Campo e cidade</h3>
+      <p class="cc-titulo" id="cc-titulo"></p>
+      <p class="cc-explica">Campo e cidade seguem o IBGE: cada setor censitário — a pequena área
+        que um recenseador percorre — é classificado como rural ou urbano.
+        <span id="cc-sentido"></span></p>
+      <div id="cc"></div>
+      <p class="nota" id="nota-campo"></p>
+
+      <h3 class="rotulo">Para onde vai o lixo</h3>
+      <div class="tab-wrap"><table class="destinos" id="t-destinos"></table></div>
+      <p class="nota" id="nota-sigilo"></p>
+    </section>
+  </div>
+
+  <section class="card" aria-labelledby="titulo-lista">
+    <h2 id="titulo-lista"></h2>
+    <p class="ficha-sub" id="sub-lista"></p>
+    <div class="tab-wrap lista" style="margin-top:.75rem"><table id="t-lista"></table></div>
+  </section>
+
+  <footer>
+    <p>Este painel acompanha o artigo
+      <a href="/blog/lixo-queimado-censo-2022/" target="_top">“Um em cada catorze domicílios
+      do Brasil queima o próprio lixo”</a>, que explica o método e as ressalvas.</p>
+    <p>As partes somam os seis destinos publicados pelo IBGE. Os setores muito pequenos
+      e as contagens de 1 ou 2 domicílios saem em sigilo; esses domicílios ficam fora da
+      conta e a lacuna é informada na ficha de cada município, nunca preenchida.
+      Campo e cidade seguem a situação do setor censitário. O esgoto em rede usa o
+      total da própria tabela de esgoto.</p>
+    <p>Dados: IBGE, Censo Demográfico 2022, agregados por setor censitário, lidos com o
+      pacote <a href="https://ipeagit.github.io/censobr/" target="_top">censobr</a>; malha do
+      IBGE lida com o <a href="https://ipeagit.github.io/geobr/" target="_top">geobr</a>
+      — os dois do Ipea. Código:
+      <a href="https://github.com/theoadepaula/destino-do-lixo" target="_top">github.com/theoadepaula/destino-do-lixo</a>.</p>
+  </footer>
+</div>
+
+<div class="dica" id="dica" aria-hidden="true"></div>
+
+<script type="application/json" id="dados">/*__DADOS__*/</script>
+<script>
+"use strict";
+// JSON.parse de um bloco application/json custa bem menos que um literal de
+// 450 KB no meio do script (medido: ~3 s a menos num celular lento).
+const D = JSON.parse(document.getElementById("dados").textContent);
+const $ = (id) => document.getElementById(id);
+const NF = new Intl.NumberFormat("pt-BR");
+const num = (x) => NF.format(Math.round(x));
+const pct = (x, d = 1) => Number.isFinite(x)
+  ? (100 * x).toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d }) + "%"
+  : "—";
+const sem = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+// --- dados -----------------------------------------------------------------------
+const M = D.mun, N = M.c.length;
+const idx = new Map(M.c.map((c, i) => [c, i]));
+const UFN = new Map(D.ufs.sigla.map((s, i) => [s, D.ufs.nome[i]]));
+// artigo de cada UF: "no Maranhão", "na Bahia", "em São Paulo"
+const ART = { BA: "a", PB: "a", AL: "", GO: "", MG: "", PE: "", RO: "", RR: "", SC: "", SP: "", SE: "" };
+const art = (u) => (u in ART ? ART[u] : "o");
+const emUF = (u) => ({ o: "no ", a: "na ", "": "em " })[art(u)] + UFN.get(u);
+const deUF = (u) => ({ o: "do ", a: "da ", "": "de " })[art(u)] + UFN.get(u);
+const CAMPOS = ["dom", "col", "cac", "que", "ent", "bal", "out", "morq", "rt", "rq", "rc", "et", "er", "ret", "rer", "lac"];
+
+function linha(i) { const s = {}; for (const k of CAMPOS) s[k] = M[k][i]; return s; }
+// uma passada só: Brasil e as 27 UFs
+const zera = () => { const s = {}; for (const k of CAMPOS) s[k] = 0; return s; };
+const BR = zera(), UFS = new Map(D.ufs.sigla.map((u) => [u, zera()]));
+for (const k of CAMPOS) { const col = M[k];
+  for (let i = 0; i < N; i++) { BR[k] += col[i]; UFS.get(M.u[i])[k] += col[i]; } }
+
+const taxa = {
+  queima: (s) => s.que / s.dom,
+  coleta: (s) => (s.col + s.cac) / s.dom,
+  esgoto: (s) => s.er / s.et,
+  rural:  (s) => s.rt / s.dom,
+  campo:  (s) => s.rt > 0 ? s.rq / s.rt : NaN,
+  cidade: (s) => (s.dom - s.rt) > 0 ? (s.que - s.rq) / (s.dom - s.rt) : NaN,
+};
+
+// Indicadores do mapa. Mesmas cinco faixas e a mesma rampa do artigo para a
+// queima; as outras três usam a mesma rampa com cortes próprios.
+const RAMPA = ["--r1", "--r2", "--r3", "--r4", "--r5"].map((v) => `var(${v})`);
+const IND = {
+  queima: { nome: "Queimam o lixo", titulo: "Domicílios que queimam o lixo na propriedade",
+            cortes: [.05, .15, .30, .50],
+            rotulos: ["até 5%", "5% a 15%", "15% a 30%", "30% a 50%", "mais de 50%"] },
+  coleta: { nome: "Têm coleta ou caçamba", titulo: "Domicílios com o lixo coletado ou levado à caçamba",
+            cortes: [.50, .70, .85, .95],
+            rotulos: ["até 50%", "50% a 70%", "70% a 85%", "85% a 95%", "mais de 95%"] },
+  esgoto: { nome: "Têm esgoto em rede", titulo: "Domicílios com esgoto em rede geral, pluvial ou fossa ligada à rede",
+            cortes: [.10, .25, .50, .90],
+            rotulos: ["até 10%", "10% a 25%", "25% a 50%", "50% a 90%", "mais de 90%"] },
+  rural:  { nome: "Moram em setor rural", titulo: "Domicílios em setores censitários rurais",
+            cortes: [.10, .25, .50, .75],
+            rotulos: ["até 10%", "10% a 25%", "25% a 50%", "50% a 75%", "mais de 75%"] },
+};
+const VAL = {};
+// um objeto reaproveitado, com getters, em vez de 22 mil objetos novos
+let I_ = 0;
+const L = {};
+for (const k of CAMPOS) Object.defineProperty(L, k, { get: () => M[k][I_] });
+for (const k of Object.keys(IND)) {
+  VAL[k] = new Float64Array(N);
+  for (let i = 0; i < N; i++) { I_ = i; VAL[k][i] = taxa[k](L); }
+}
+// como cut(..., right = TRUE) no R: (-Inf, .05] é a primeira faixa
+const faixa = (k, v) => { if (!Number.isFinite(v)) return -1;
+  const c = IND[k].cortes; let f = 0; while (f < c.length && v > c[f]) f++; return f; };
+const corDe = (k, i) => { const f = faixa(k, VAL[k][i]); return f < 0 ? "var(--rule)" : RAMPA[f]; };
+
+// --- estado ----------------------------------------------------------------------
+const E = { uf: "", ind: "queima", mun: null, ordem: { k: "queima", dir: -1 } };
+function lerHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (UFN.has(h.get("uf"))) E.uf = h.get("uf");
+  if (IND[h.get("ind")]) E.ind = h.get("ind");
+  const m = Number(h.get("m"));
+  if (idx.has(m)) { E.mun = idx.get(m); if (!E.uf) E.uf = ""; }
+}
+function gravarHash() {
+  const h = new URLSearchParams();
+  if (E.uf) h.set("uf", E.uf);
+  if (E.ind !== "queima") h.set("ind", E.ind);
+  if (E.mun !== null) h.set("m", M.c[E.mun]);
+  const s = h.toString();
+  history.replaceState(null, "", s ? "#" + s : location.pathname + location.search);
+}
+
+// --- malha -----------------------------------------------------------------------
+// Já vem projetada pelo R: cada município é o d= de um <path>, na moldura w × h.
+const cache = new Map();
+function malha(nome) {
+  if (!cache.has(nome)) cache.set(nome, fetch("malha/" + nome + ".json").then((r) => {
+    if (!r.ok) throw new Error("malha " + nome + ": HTTP " + r.status); return r.json(); }));
+  return cache.get(nome);
+}
+
+// --- mapa --------------------------------------------------------------------------
+const SVGNS = "http://www.w3.org/2000/svg";
+const svg = $("mapa");
+let atual = null;   // { ids: índices em M, els: <path>, pos: índice -> posição }
+let pedido = 0;
+
+function desenhaMapa(g, ehUF) {
+  svg.classList.toggle("uf", ehUF);
+  cancelAnimationFrame(anim);
+  Object.assign(VISTA, { w: g.w, h: g.h, x: 0, y: 0, k: 1, kmax: ehUF ? 12 : 8 });
+  aplica();
+  const rot = ehUF ? "Ver a UF inteira" : "Ver o Brasil inteiro";
+  $("z-tudo").setAttribute("aria-label", rot); $("z-tudo").title = rot;
+  const frag = document.createDocumentFragment();
+  const ids = [], els = [];
+  for (let j = 0; j < g.id.length; j++) {
+    if (!g.d[j]) continue;                       // menor que um vértice no mapa do país
+    const i = idx.get(g.id[j]);
+    const p = document.createElementNS(SVGNS, "path");
+    p.setAttribute("d", g.d[j]); p.setAttribute("class", "m"); p.dataset.i = i;
+    frag.appendChild(p); ids.push(i); els.push(p);
+  }
+  if (g.fronteira) {
+    const b = document.createElementNS(SVGNS, "path");
+    b.setAttribute("class", "fronteira"); b.setAttribute("d", g.fronteira);
+    frag.appendChild(b);
+  }
+  for (const c of ["realce", "escolhido"]) {
+    const p = document.createElementNS(SVGNS, "path"); p.setAttribute("class", c); p.id = "x-" + c;
+    frag.appendChild(p);
+  }
+  svg.replaceChildren(frag);
+  atual = { ids, els, pos: new Map(ids.map((i, j) => [i, j])) };
+  pinta(); marcaEscolhido();
+  if (E.mun !== null) focaMunicipio(E.mun);
+}
+function pinta() {
+  if (!atual) return;
+  atual.els.forEach((p, j) => p.setAttribute("fill", corDe(E.ind, atual.ids[j])));
+}
+function marcaEscolhido() {
+  const j = atual && E.mun !== null ? atual.pos.get(E.mun) : undefined;
+  $("x-escolhido")?.setAttribute("d", j === undefined ? "" : atual.els[j].getAttribute("d"));
+}
+
+// --- zoom e movimento --------------------------------------------------------------
+// Tudo pelo viewBox do SVG: a vista é um retângulo (x, y, w/k, h/k) dentro da
+// moldura w × h. k vai de 1 (moldura inteira) a kmax, e a vista nunca sai da
+// moldura. Os traços usam vector-effect: non-scaling-stroke e não engrossam.
+const VISTA = { w: 1, h: 1, x: 0, y: 0, k: 1, kmax: 8 };
+const semMovimento = matchMedia("(prefers-reduced-motion: reduce)");
+let anim = 0;
+const centro = (v) => [v.x + VISTA.w / v.k / 2, v.y + VISTA.h / v.k / 2];
+function limita(v) {
+  const k = Math.min(VISTA.kmax, Math.max(1, v.k)), vw = VISTA.w / k, vh = VISTA.h / k;
+  return { k, x: Math.min(VISTA.w - vw, Math.max(0, v.x)), y: Math.min(VISTA.h - vh, Math.max(0, v.y)) };
+}
+function aplica() {
+  const vw = VISTA.w / VISTA.k, vh = VISTA.h / VISTA.k;
+  svg.setAttribute("viewBox", `${VISTA.x.toFixed(2)} ${VISTA.y.toFixed(2)} ${vw.toFixed(2)} ${vh.toFixed(2)}`);
+  svg.classList.toggle("zoom", VISTA.k > 1.001);
+  svg.classList.toggle("perto", VISTA.k > 3);
+  $("z-mais").disabled = VISTA.k >= VISTA.kmax - 1e-6;
+  $("z-menos").disabled = $("z-tudo").disabled = VISTA.k <= 1.001;
+}
+function vai(alvo, animar = true) {
+  cancelAnimationFrame(anim);
+  const fim = limita(alvo);
+  if (!animar || semMovimento.matches) { Object.assign(VISTA, fim); aplica(); return; }
+  const ini = { k: VISTA.k, x: VISTA.x, y: VISTA.y }, c0 = centro(ini), c1 = centro(fim);
+  const t0 = performance.now(), dur = 450;
+  const quadro = (t) => {
+    let u = Math.min(1, (t - t0) / dur);
+    u = u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;          // ease-in-out
+    // escala interpolada no log: a aproximação parece ter velocidade constante
+    const k = Math.exp(Math.log(ini.k) + (Math.log(fim.k) - Math.log(ini.k)) * u);
+    const cx = c0[0] + (c1[0] - c0[0]) * u, cy = c0[1] + (c1[1] - c0[1]) * u;
+    Object.assign(VISTA, limita({ k, x: cx - VISTA.w / k / 2, y: cy - VISTA.h / k / 2 }));
+    aplica();
+    if (u < 1) anim = requestAnimationFrame(quadro);
+  };
+  anim = requestAnimationFrame(quadro);
+}
+// aproxima (fator > 1) ou afasta mantendo parado o ponto (px, py) do mapa
+function zoomEm(fator, px, py, animar = true) {
+  const k = Math.min(VISTA.kmax, Math.max(1, VISTA.k * fator)), r = VISTA.k / k;
+  vai({ k, x: px - (px - VISTA.x) * r, y: py - (py - VISTA.y) * r }, animar);
+}
+const tudoVisivel = () => vai({ k: 1, x: 0, y: 0 });
+function focaMunicipio(i, animar = true) {
+  const j = atual ? atual.pos.get(i) : undefined;
+  if (j === undefined) return;
+  const b = atual.els[j].getBBox();
+  // o município ocupa cerca de um terço da vista; no mapa do país, no máximo 6×,
+  // porque a malha do país é mais grossa que a de cada UF
+  const teto = svg.classList.contains("uf") ? VISTA.kmax : Math.min(6, VISTA.kmax);
+  const k = Math.max(1, Math.min(teto, VISTA.w / (b.width * 3 || 1), VISTA.h / (b.height * 3 || 1)));
+  const cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+  vai({ k, x: cx - VISTA.w / k / 2, y: cy - VISTA.h / k / 2 }, animar);
+}
+function ponto(cx, cy) {
+  const p = new DOMPoint(cx, cy).matrixTransform(svg.getScreenCTM().inverse());
+  return [p.x, p.y];
+}
+
+// Arrastar (mouse ou um dedo) e pinça (dois dedos) pelo mesmo cálculo: guarda o
+// ponto do mapa sob o centro do gesto e o mantém sob o centro atual dos dedos.
+const toques = new Map();
+let gesto = null, arrastou = false;
+const media = (ps) => [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
+function iniciaGesto() {
+  if (!toques.size) { gesto = null; return; }
+  const ps = [...toques.values()], [cx, cy] = media(ps);
+  const m = svg.getScreenCTM().inverse();
+  gesto = { k0: VISTA.k, a: m.a, d: m.d,
+            left: (VISTA.x - m.e) / m.a, top: (VISTA.y - m.f) / m.d,
+            p: ponto(cx, cy), c: [cx, cy],
+            dist: ps.length > 1 ? Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1]) : 0 };
+}
+svg.addEventListener("pointerdown", (ev) => {
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  cancelAnimationFrame(anim);
+  toques.set(ev.pointerId, [ev.clientX, ev.clientY]);
+  if (toques.size === 1) arrastou = false;
+  iniciaGesto();
+});
+svg.addEventListener("pointermove", (ev) => {
+  if (!toques.has(ev.pointerId) || !gesto) return;
+  toques.set(ev.pointerId, [ev.clientX, ev.clientY]);
+  const ps = [...toques.values()], [cx, cy] = media(ps);
+  if (!arrastou && ps.length < 2 && Math.hypot(cx - gesto.c[0], cy - gesto.c[1]) < 5) return;
+  if (!arrastou) { arrastou = true; esconde(); try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ } }
+  let k = gesto.k0;
+  if (ps.length > 1 && gesto.dist > 0)
+    k = gesto.k0 * Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1]) / gesto.dist;
+  k = Math.min(VISTA.kmax, Math.max(1, k));
+  const r = gesto.k0 / k;
+  Object.assign(VISTA, limita({ k,
+    x: gesto.p[0] - (cx - gesto.left) * gesto.a * r,
+    y: gesto.p[1] - (cy - gesto.top) * gesto.d * r }));
+  aplica();
+  svg.classList.add("arrastando");
+});
+function soltaToque(ev) {
+  toques.delete(ev.pointerId);
+  if (!toques.size) svg.classList.remove("arrastando");
+  iniciaGesto();
+}
+svg.addEventListener("pointerup", soltaToque);
+svg.addEventListener("pointercancel", soltaToque);
+
+svg.addEventListener("wheel", (ev) => {
+  const f = Math.exp(-ev.deltaY * (ev.deltaMode === 1 ? 0.05 : 0.002));
+  // no limite, a roda volta a rolar a página
+  if ((f < 1 && VISTA.k <= 1.001) || (f > 1 && VISTA.k >= VISTA.kmax - 1e-6)) return;
+  ev.preventDefault();
+  const [px, py] = ponto(ev.clientX, ev.clientY);
+  zoomEm(f, px, py, false);
+}, { passive: false });
+
+svg.addEventListener("keydown", (ev) => {
+  const vw = VISTA.w / VISTA.k, vh = VISTA.h / VISTA.k, c = centro(VISTA);
+  const passo = { ArrowLeft: [-.2, 0], ArrowRight: [.2, 0], ArrowUp: [0, -.2], ArrowDown: [0, .2] }[ev.key];
+  if (ev.key === "+" || ev.key === "=") zoomEm(1.6, c[0], c[1]);
+  else if (ev.key === "-" || ev.key === "_") zoomEm(1 / 1.6, c[0], c[1]);
+  else if (ev.key === "0" || ev.key === "Home") tudoVisivel();
+  else if (passo) vai({ k: VISTA.k, x: VISTA.x + passo[0] * vw, y: VISTA.y + passo[1] * vh }, false);
+  else return;
+  ev.preventDefault();
+});
+$("z-mais").addEventListener("click", () => { const c = centro(VISTA); zoomEm(1.6, c[0], c[1]); });
+$("z-menos").addEventListener("click", () => { const c = centro(VISTA); zoomEm(1 / 1.6, c[0], c[1]); });
+$("z-tudo").addEventListener("click", tudoVisivel);
+
+async function mostraMapa() {
+  const meu = ++pedido;
+  const nome = E.uf ? "uf-" + E.uf : "br";
+  $("carregando").hidden = false;
+  try {
+    const g = await malha(nome);
+    if (meu !== pedido) return;
+    desenhaMapa(g, !!E.uf);
+    $("carregando").hidden = true;
+    if (!window.__primeiroMapa) {
+      window.__primeiroMapa = performance.now();
+      performance.mark("primeiro-mapa");
+    }
+  } catch (e) {
+    $("carregando").textContent = "não foi possível carregar a malha";
+    console.error(e);
+  }
+}
+
+// dica (mouse) e escolha (clique ou toque)
+const dica = $("dica");
+function textoDica(i) {
+  const v = VAL[E.ind][i], nome = `<b>${M.n[i]} (${M.u[i]})</b>`;
+  if (E.ind === "queima") return `${nome}<br>${pct(v)} queimam o lixo<br>${num(M.que[i])} de ${num(M.dom[i])} domicílios`;
+  return `${nome}<br>${pct(v)} · ${IND[E.ind].nome.toLowerCase()}<br>${num(M.dom[i])} domicílios`;
+}
+svg.addEventListener("pointermove", (ev) => {
+  if (ev.pointerType !== "mouse" || toques.size) return;
+  const t = ev.target.closest("path.m");
+  if (!t) { esconde(); return; }
+  const i = +t.dataset.i;
+  dica.innerHTML = textoDica(i); dica.classList.add("on");
+  const r = dica.getBoundingClientRect();
+  let x = ev.clientX + 14, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  dica.style.left = x + "px"; dica.style.top = y + "px";
+  $("x-realce").setAttribute("d", t.getAttribute("d"));
+});
+function esconde() { dica.classList.remove("on"); $("x-realce")?.setAttribute("d", ""); }
+svg.addEventListener("pointerleave", esconde);
+svg.addEventListener("click", (ev) => {
+  const t = ev.target.closest("path.m");
+  if (arrastou) { arrastou = false; return; }      // fim de arrasto não é clique
+  if (t) { if (ev.pointerType !== "mouse") esconde(); escolhe(+t.dataset.i, false); }
+});
+
+// --- ficha -------------------------------------------------------------------------
+function unidades() {
+  // da mais local à mais geral: município, UF, Brasil
+  const u = [];
+  if (E.mun !== null) u.push({ nome: `${M.n[E.mun]} (${M.u[E.mun]})`, em: `em ${M.n[E.mun]} (${M.u[E.mun]})`, curto: M.n[E.mun], s: linha(E.mun) });
+  const uf = E.mun !== null ? M.u[E.mun] : E.uf;
+  if (uf) u.push({ nome: UFN.get(uf), em: emUF(uf), curto: uf, s: UFS.get(uf) });
+  u.push({ nome: "Brasil", em: "no Brasil", curto: "Brasil", s: BR });
+  return u;
+}
+// A ficha segue o indicador de "O mapa mostra". Para cada um: a frase do número
+// grande, o verbo curto, quantos domicílios entram, e como se parte entre campo
+// e cidade (numerador e denominador de cada lado; o urbano é o total menos o
+// rural). `sentido` diz como ler: na queima, mais é pior; na coleta e no
+// esgoto, mais é melhor. A parte rural não tem taxa por lado.
+const FICHA = {
+  queima: {
+    frase: "dos domicílios queimam o lixo na propriedade", verbo: "queimam o lixo",
+    sentido: "Aqui, quanto maior, pior: é o lixo que não chega a serviço nenhum.",
+    sub: (s) => `${num(s.que)} domicílios, com ${num(s.morq)} moradores.`,
+    rural: (s) => [s.rq, s.rt], urbano: (s) => [s.que - s.rq, s.dom - s.rt],
+    nota: (s) => s.que > 0 ? `O campo tem ${pct(s.rt / s.dom)} dos domicílios e ${pct(s.rq / s.que)} da queima.` : "",
+  },
+  coleta: {
+    frase: "dos domicílios têm o lixo coletado ou levado à caçamba", verbo: "têm coleta",
+    sentido: "Aqui, quanto maior, melhor: é o lixo que um serviço de limpeza recolhe.",
+    sub: (s) => `${num(s.col + s.cac)} domicílios: ${num(s.col)} com coleta na porta e ${num(s.cac)} com caçamba.`,
+    rural: (s) => [s.rc, s.rt], urbano: (s) => [s.col + s.cac - s.rc, s.dom - s.rt],
+    nota: (s) => { const sem = s.dom - s.col - s.cac;
+      return sem > 0 ? `O campo tem ${pct(s.rt / s.dom)} dos domicílios e ${pct((s.rt - s.rc) / sem)} dos que ficam sem coleta.` : ""; },
+  },
+  esgoto: {
+    frase: "dos domicílios têm esgoto em rede geral, pluvial ou fossa ligada à rede", verbo: "têm esgoto em rede",
+    sentido: "Aqui, quanto maior, melhor. O esgoto tem tabela própria no Censo, com um total um pouco diferente do lixo.",
+    sub: (s) => `${num(s.er)} de ${num(s.et)} domicílios na tabela de esgoto.`,
+    rural: (s) => [s.rer, s.ret], urbano: (s) => [s.er - s.rer, s.et - s.ret],
+    nota: (s) => { const sem = s.et - s.er;
+      return sem > 0 && s.et > 0 ? `O campo tem ${pct(s.ret / s.et)} dos domicílios e ${pct((s.ret - s.rer) / sem)} dos que ficam sem esgoto em rede.` : ""; },
+  },
+  rural: {
+    frase: "dos domicílios ficam em setor rural",
+    sub: (s) => `${num(s.rt)} domicílios no campo e ${num(s.dom - s.rt)} na cidade.`,
+  },
+};
+const razao = ([n, d]) => d > 0 ? n / d : NaN;
+
+function ficha() {
+  const us = unidades(), a = us[0], s = a.s, F = FICHA[E.ind];
+  $("ficha-tipo").textContent = E.mun !== null ? "Município" : (E.uf ? "Unidade da federação" : "País");
+  $("ficha-nome").textContent = a.nome;
+  $("ficha-sub").textContent = `${num(s.dom)} domicílios · ${pct(taxa.rural(s))} em setor rural`;
+  $("limpar").hidden = E.mun === null;
+  $("heroi-n").textContent = pct(taxa[E.ind](s));
+  $("heroi-t").textContent = F.frase;
+  const comp = us.slice(1).map((u) => `${u.em}, ${pct(taxa[E.ind](u.s))}`);
+  $("heroi-sub").textContent = F.sub(s) + (comp.length ? ` Para comparar: ${comp.join("; ")}.` : "");
+  campoCidade(us);
+  destinos(us);
+  const lac = s.lac, base = s.dom + lac;
+  $("nota-sigilo").textContent = lac > 0
+    ? `${num(lac)} domicílios (${pct(lac / base)}) ficaram fora da conta por sigilo do IBGE.`
+    : "Nenhum domicílio ficou fora da conta por sigilo.";
+}
+
+// Campo e cidade: um título que afirma, rótulo direto em cada barra, contagem
+// de domicílios de cada lado, e o caso sem setor rural (ou urbano) dito em texto.
+function campoCidade(us) {
+  const a = us[0], s = a.s, F = FICHA[E.ind];
+  const urb = (x) => x.dom - x.rt;
+
+  if (E.ind === "rural") {
+    // a divisão campo × cidade É o indicador: mostra o tamanho de cada lado
+    $("cc-titulo").innerHTML = `<span class="num">${pct(s.rt / s.dom)}</span> dos domicílios ficam no campo; ` +
+      `<span class="num">${pct(urb(s) / s.dom)}</span>, na cidade.`;
+    $("cc-sentido").textContent = "Neste indicador não há taxa por lado: o que se compara é o tamanho do campo e da cidade.";
+    let h = "";
+    us.forEach((u, j) => {
+      const lado = (rot, n) => `<div class="cc-linha so-contagem"><span class="cc-rot">${rot}</span>` +
+        `<span class="cc-n">${num(n)} domicílios</span><span class="cc-val">${pct(n / u.s.dom)}</span></div>`;
+      h += `<div class="cc-grupo${j === 0 ? " forte" : ""}"><p>${u.nome}</p>` +
+        lado("campo", u.s.rt) + lado("cidade", urb(u.s)) + "</div>";
+    });
+    $("cc").innerHTML = h;
+    $("nota-campo").textContent = "";
+    return;
+  }
+
+  const c = razao(F.rural(s)), d = razao(F.urbano(s));
+  const v = (x) => `<span class="num">${pct(x)}</span>`;
+  let t;
+  if (Number.isFinite(c) && Number.isFinite(d)) t = `No campo, ${v(c)} ${F.verbo}; na cidade, ${v(d)}.`;
+  else if (Number.isFinite(d)) t = `${a.nome} não tem setor rural: na cidade, ${v(d)} ${F.verbo}.`;
+  else t = `${a.nome} não tem setor urbano: no campo, ${v(c)} ${F.verbo}.`;
+  $("cc-titulo").innerHTML = t;
+  $("cc-sentido").textContent = F.sentido;
+
+  const barra = (rot, [nume, den], cor, falta) => {
+    const x = razao([nume, den]);
+    return Number.isFinite(x)
+      ? `<div class="cc-linha"><span class="cc-rot">${rot}<small>${num(den)} domicílios</small></span>` +
+        `<div class="cc-trilho" role="img" aria-label="${rot}: ${pct(x)} de ${num(den)} domicílios ${F.verbo}">` +
+        `<div class="cc-barra" style="width:${(100 * x).toFixed(2)}%;background:${cor}"></div></div>` +
+        `<span class="cc-val">${pct(x)}</span></div>`
+      : `<div class="cc-linha"><span class="cc-rot">${rot}<small>0 domicílios</small></span>` +
+        `<span class="cc-sem">${falta}</span></div>`;
+  };
+  let h = "";
+  us.forEach((u, j) => {
+    h += `<div class="cc-grupo${j === 0 ? " forte" : ""}"><p>${u.nome}</p>` +
+      barra("campo", F.rural(u.s), "var(--s4)", "não tem setor rural") +
+      barra("cidade", F.urbano(u.s), "var(--s1)", "não tem setor urbano") + "</div>";
+  });
+  h += `<div class="cc-eixo" aria-hidden="true"><span></span><div><span>0%</span><span>50%</span><span>100%</span></div><span></span></div>`;
+  $("cc").innerHTML = h;
+
+  const [, rden] = F.rural(s), [, uden] = F.urbano(s);
+  let nota = rden > 0 && uden > 0 ? F.nota(s) : "";
+  if (rden > 0 && rden < 100) nota += " Com tão poucos domicílios rurais, a taxa do campo oscila muito.";
+  $("nota-campo").textContent = nota.trim();
+}
+
+const DEST = [["col", "Coletado no domicílio"], ["cac", "Depositado em caçamba"],
+              ["que", "Queimado na propriedade"], ["bal", "Jogado em terreno baldio ou área pública"],
+              ["out", "Outro destino"], ["ent", "Enterrado na propriedade"]];
+const DESTAQUE = { queima: ["que"], coleta: ["col", "cac"], esgoto: ["esg"], rural: [] };
+function destinos(us) {
+  const fortes = DESTAQUE[E.ind];
+  let h = "<thead><tr><th scope=\"col\">Destino</th>" +
+    us.map((u) => `<th scope="col">${u.curto}</th>`).join("") + "</tr></thead><tbody>";
+  for (const [k, rot] of DEST)
+    h += `<tr${fortes.includes(k) ? " class=\"forte\"" : ""}><td>${rot}</td>` +
+      us.map((u) => `<td>${pct(u.s[k] / u.s.dom)}</td>`).join("") + "</tr>";
+  h += `<tr class="sep${fortes.includes("esg") ? " forte" : ""}"><td>Esgoto em rede<span class="sr"> (outro total)</span></td>` +
+    us.map((u) => `<td>${pct(taxa.esgoto(u.s))}</td>`).join("") + "</tr>";
+  $("t-destinos").innerHTML = h + "</tbody>";
+}
+
+// --- lista dos municípios ------------------------------------------------------------
+const COLS = [
+  { k: "nome", rot: "Município", v: (i) => M.n[i], f: (i) => M.n[i] + (E.uf ? "" : `<span class="uf">${M.u[i]}</span>`) },
+  { k: "dom", rot: "Domicílios", v: (i) => M.dom[i], f: (i) => num(M.dom[i]) },
+  { k: "queima", rot: "Queimam", v: (i) => VAL.queima[i], f: (i) => pct(VAL.queima[i]) },
+  { k: "coleta", rot: "Coleta ou caçamba", v: (i) => VAL.coleta[i], f: (i) => pct(VAL.coleta[i]) },
+  { k: "rural", rot: "Setor rural", v: (i) => VAL.rural[i], f: (i) => pct(VAL.rural[i]) },
+  { k: "esgoto", rot: "Esgoto em rede", v: (i) => VAL.esgoto[i], f: (i) => pct(VAL.esgoto[i]) },
+];
+const TOPO_BR = 30;
+function lista() {
+  const o = E.ordem, col = COLS.find((c) => c.k === o.k);
+  let ids = [];
+  for (let i = 0; i < N; i++) if (!E.uf || M.u[i] === E.uf) ids.push(i);
+  ids.sort((a, b) => {
+    const va = col.v(a), vb = col.v(b);
+    if (typeof va === "string") return o.dir * va.localeCompare(vb, "pt-BR");
+    if (!Number.isFinite(va)) return 1; if (!Number.isFinite(vb)) return -1;
+    return o.dir * (va - vb);
+  });
+  const total = ids.length;
+  if (!E.uf) ids = ids.slice(0, TOPO_BR);
+  $("titulo-lista").textContent = E.uf ? `Os ${num(total)} municípios ${deUF(E.uf)}`
+                                       : `Os ${TOPO_BR} primeiros municípios do Brasil`;
+  $("sub-lista").textContent = (E.uf ? "" : `Na ordem escolhida, entre os ${num(total)}. Escolha uma UF para ver todos os dela. `) +
+    "Clique no cabeçalho para reordenar e na linha para abrir a ficha.";
+  let h = "<thead><tr>" + COLS.map((c) => {
+    const s = c.k === o.k ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : "";
+    return `<th scope="col"${s}><button type="button" data-k="${c.k}">${c.rot}</button></th>`;
+  }).join("") + "</tr></thead><tbody>";
+  for (const i of ids)
+    h += `<tr data-i="${i}"${i === E.mun ? ' class="ativo"' : ""}>` + COLS.map((c) => `<td>${c.f(i)}</td>`).join("") + "</tr>";
+  $("t-lista").innerHTML = h + "</tbody>";
+}
+$("t-lista").addEventListener("click", (ev) => {
+  const b = ev.target.closest("th button");
+  if (b) { const k = b.dataset.k;
+    E.ordem = E.ordem.k === k ? { k, dir: -E.ordem.dir } : { k, dir: k === "nome" ? 1 : -1 };
+    lista(); return; }
+  const tr = ev.target.closest("tbody tr");
+  if (tr) { escolhe(+tr.dataset.i, false); $("ficha").scrollIntoView({ behavior: "smooth", block: "start" }); }
+});
+
+// --- cabeçalhos e legenda -------------------------------------------------------------
+function cabecalho() {
+  const ind = IND[E.ind];
+  $("titulo-mapa").textContent = ind.titulo;
+  $("sub-mapa").textContent = (E.uf ? `Municípios ${deUF(E.uf)}` : "Os 5.570 municípios") + ", 2022";
+  const temLacuna = VAL[E.ind].some((v) => !Number.isFinite(v));
+  $("legenda").innerHTML = ind.rotulos.map((r, f) => `<li style="--c:${RAMPA[f]}">${r}</li>`).join("") +
+    (temLacuna ? `<li class="lacuna" style="--c:var(--rule)">sem dado</li>` : "");
+}
+function faixaEscolha() {
+  const el = $("faixa-escolha");
+  if (E.mun === null) { el.innerHTML = matchMedia("(pointer: coarse)").matches
+      ? "Toque num município para abrir a ficha." : "Clique num município para abrir a ficha."; return; }
+  const i = E.mun;
+  const F = FICHA[E.ind];
+  el.innerHTML = `<b>${M.n[i]} (${M.u[i]})</b>: ${pct(VAL[E.ind][i])} ${F.verbo || "em setor rural"}. ` +
+    `<a href="#ficha" id="ir-ficha">Ver a ficha</a>`;
+}
+
+// --- ações ------------------------------------------------------------------------
+function escolhe(i, mudaUF) {
+  E.mun = i;
+  if (mudaUF && E.uf !== M.u[i]) { E.uf = M.u[i]; $("sel-uf").value = E.uf; tudo(); return; }
+  marcaEscolhido(); focaMunicipio(i); ficha(); faixaEscolha(); lista(); gravarHash();
+}
+function tudo() { cabecalho(); mostraMapa(); ficha(); faixaEscolha(); lista(); gravarHash(); }
+
+for (const [s, n] of D.ufs.sigla.map((s, i) => [s, D.ufs.nome[i]]))
+  $("sel-uf").insertAdjacentHTML("beforeend", `<option value="${s}">${n}</option>`);
+for (const [k, v] of Object.entries(IND))
+  $("sel-ind").insertAdjacentHTML("beforeend", `<option value="${k}">${v.nome}</option>`);
+
+$("sel-uf").addEventListener("change", (ev) => {
+  E.uf = ev.target.value;
+  if (E.mun !== null && E.uf && M.u[E.mun] !== E.uf) E.mun = null;
+  tudo();
+});
+$("sel-ind").addEventListener("change", (ev) => {
+  E.ind = ev.target.value; E.ordem = { k: E.ind, dir: -1 };
+  cabecalho(); pinta(); ficha(); faixaEscolha(); lista(); gravarHash();
+});
+$("limpar").addEventListener("click", () => { E.mun = null; marcaEscolhido(); tudoVisivel(); ficha(); faixaEscolha(); lista(); gravarHash(); });
+
+// busca: começa-com primeiro, depois contém; sem acento e sem caixa
+const NOMES = M.n.map(sem);
+const busca = $("busca"), sug = $("sugestoes");
+let achados = [], cursor = -1;
+function fechaSug() { sug.hidden = true; busca.setAttribute("aria-expanded", "false"); cursor = -1; }
+busca.addEventListener("input", () => {
+  const q = sem(busca.value.trim());
+  if (q.length < 2) { fechaSug(); return; }
+  const a = [], b = [];
+  for (let i = 0; i < N; i++) { const p = NOMES[i].indexOf(q); if (p === 0) a.push(i); else if (p > 0) b.push(i); }
+  const ord = (x, y) => M.dom[y] - M.dom[x];
+  achados = a.sort(ord).concat(b.sort(ord)).slice(0, 8);
+  sug.innerHTML = achados.length
+    ? achados.map((i, j) => `<li role="option" id="op-${j}" data-i="${i}">${M.n[i]}<span class="uf">${M.u[i]}</span></li>`).join("")
+    : `<li aria-disabled="true">Nenhum município com esse nome</li>`;
+  sug.hidden = false; busca.setAttribute("aria-expanded", "true"); cursor = -1;
+});
+busca.addEventListener("keydown", (ev) => {
+  if (sug.hidden) return;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    cursor = (cursor + (ev.key === "ArrowDown" ? 1 : -1) + achados.length) % achados.length;
+    [...sug.children].forEach((li, j) => li.setAttribute("aria-selected", j === cursor));
+    busca.setAttribute("aria-activedescendant", "op-" + cursor);
+  } else if (ev.key === "Enter") {
+    ev.preventDefault(); const i = achados[Math.max(cursor, 0)]; if (i !== undefined) pega(i);
+  } else if (ev.key === "Escape") fechaSug();
+});
+sug.addEventListener("pointerdown", (ev) => {
+  const li = ev.target.closest("li[data-i]"); if (!li) return;
+  ev.preventDefault(); pega(+li.dataset.i);
+});
+busca.addEventListener("blur", () => setTimeout(fechaSug, 120));
+function pega(i) { busca.value = ""; fechaSug(); busca.blur(); escolhe(i, true); }
+
+
+// --- início -------------------------------------------------------------------------
+function abreDoEndereco() {
+  Object.assign(E, { uf: "", ind: "queima", mun: null });
+  lerHash();
+  $("sel-uf").value = E.uf; $("sel-ind").value = E.ind; E.ordem = { k: E.ind, dir: -1 };
+  tudo();
+}
+abreDoEndereco();
+// link colado na mesma aba (só o # muda): abre igual a um carregamento novo.
+// replaceState, usado pelo próprio painel, não dispara este evento.
+addEventListener("hashchange", abreDoEndereco);
+</script>
+</html>

@@ -119,8 +119,8 @@ O que deveria mostrar:
 
 ## 7. Pendências
 
-- [ ] Revisão do Théo no artigo e decisão da data.
+- [x] Revisão do Théo no artigo; data 17/02/2027.
 - [x] Repositório público https://github.com/theoadepaula/destino-do-lixo, criado em 2026-11-01. O rodapé do artigo aponta para ele.
-- [ ] Painel (§6).
+- [x] Painel (§6): `R/05_painel.R` gera `public/apps/destino-do-lixo/` no site; aprovado pelo Théo em 2026-11-01, sai com o artigo em 17/02/2027.
 - [ ] Trocar a rampa do mapa pela do theoviz quando existir.
 - [ ] Pauta possível, não escrita: comparar com 2010 exige compatibilizar setores.

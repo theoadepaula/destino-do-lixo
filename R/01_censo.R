@@ -53,7 +53,12 @@ x <- x |>
          rural = situacao == "Rural",
          lixo_setor = rowSums(pick(starts_with("dom_")), na.rm = TRUE),
          rur_total    = if_else(rural, lixo_setor, 0),
-         rur_queimado = if_else(rural, coalesce(dom_queimado, 0), 0))
+         rur_queimado = if_else(rural, coalesce(dom_queimado, 0), 0),
+         # para o painel: coleta e esgoto no lado rural, pelo mesmo corte da
+         # situacao do setor (o urbano sai por diferenca do total)
+         rur_coleta    = if_else(rural, coalesce(dom_coletado, 0) + coalesce(dom_cacamba, 0), 0),
+         rur_esg_total = if_else(rural, rowSums(pick(all_of(sprintf("V%05d", 309:316))), na.rm = TRUE), 0),
+         rur_esg_rede  = if_else(rural, coalesce(V00309, 0) + coalesce(V00310, 0), 0))
 
 cat("setores:", nrow(x), " suprimidos inteiros:", sum(x$suprimido),
     " DPO no Basico desses setores:", sum(x$V0007[x$suprimido]), "\n")
@@ -84,7 +89,9 @@ m <- x |>
 # Lixo e esgoto sao do mesmo universo (DPPO), mas a supressao de celula corta
 # cada tabela por conta propria: os totais nao batem por municipio. Por isso
 # p_rede usa o proprio denominador (esg_total), nunca dom_total.
-stopifnot(all(m$lacuna_celula >= 0), all(m$rur_queimado <= m$rur_total))
+stopifnot(all(m$lacuna_celula >= 0), all(m$rur_queimado <= m$rur_total),
+          all(m$rur_coleta <= m$rur_total), all(m$rur_esg_rede <= m$rur_esg_total),
+          all(m$rur_esg_total <= m$esg_total))
 
 uf_sigla <- c(`11`="RO",`12`="AC",`13`="AM",`14`="RR",`15`="PA",`16`="AP",`17`="TO",
   `21`="MA",`22`="PI",`23`="CE",`24`="RN",`25`="PB",`26`="PE",`27`="AL",`28`="SE",`29`="BA",
