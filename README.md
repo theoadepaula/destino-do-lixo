@@ -6,7 +6,7 @@ Destino do lixo dos domicílios brasileiros por município, Censo 2022
 ## Rodar
 
 Sempre da raiz do projeto. R 4.5.2, pacotes: censobr 1.0.0, geobr 2.1.0, arrow, dplyr, tidyr, sf,
-rmapshaper, geojsonsf, theoviz >= 0.3.1. No Windows, sempre por arquivo:
+rmapshaper, geojsonsf, theoviz >= 0.4.1. No Windows, sempre por arquivo:
 
 ```
 "C:\Program Files\R\R-4.5.2\bin\Rscript.exe" R/01_censo.R          # ~2 min; baixa ~300 MB na 1a vez
