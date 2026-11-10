@@ -11,6 +11,9 @@
 
 library(ggplot2)
 suppressPackageStartupMessages(library(theoviz))
+# LARGURA_SVG e ajustar_textos(). No site o arquivo mora em quarto/_temas/
+# (comum aos temas com ggiraph); no projeto, em R/. Mesma regra do dados().
+source(Find(file.exists, file.path(here::here(), c("_temas", "R"), "girafe_celular.R")))
 
 # O mesmo arquivo roda nos dois lugares: no site os dados moram em
 # quarto/_dados/lixo/ (here::here() resolve para <site>/quarto); no projeto,
@@ -45,7 +48,7 @@ FUNDO      <- site("noite")
 # invertida e revalidada. Quando o theoviz ganhar a rampa, trocar por ela.
 RAMPA <- c("#184f95", "#256abf", "#3987e5", "#6da7ec", "#b7d3f6")
 
-tema_lixo <- function(base_size = 12) {
+tema_lixo <- function(base_size = 11) {  # 11, nao 12: ver girafe_celular.R
   theme_minimal(base_size = base_size) +
     theme(
       text             = element_text(colour = TINTA_2),
@@ -73,9 +76,9 @@ FONTE_MAPA <- paste0(FONTE, "\nMalha municipal 2022 via geobr (Ipea).")
 
 # Graficos interativos: ggiraph. Mesmas opcoes do anuario.R -- o tooltip usa a
 # CHAPA do site, nao a tinta de texto (ver o comentario la).
-interativo <- function(p, altura = 4.2, largura = 7.5, realce = TRUE) {
+interativo <- function(p, altura = 4.2, largura = LARGURA_SVG, realce = TRUE) {
   ggiraph::girafe(
-    ggobj = p, width_svg = largura, height_svg = altura, bg = "transparent",
+    ggobj = ajustar_textos(p, largura), width_svg = largura, height_svg = altura, bg = "transparent",
     options = list(
       if (realce) ggiraph::opts_hover(css = paste0("stroke:", TINTA, ";stroke-width:1.2;"))
       else ggiraph::opts_hover(css = ""),
