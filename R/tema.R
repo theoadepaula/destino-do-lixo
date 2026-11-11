@@ -5,12 +5,17 @@
 #
 # Molde: quarto/_temas/anuario.R (ggiraph, nao plotly -- o mapa e o grafico de
 # pontos sao ggplot e precisam chegar com subtitulo e fonte intactos).
-# Cores, tintas e tabela vem do theoviz (>= 0.3.1), sempre no modo escuro: o
+# Cores, tintas e tabela vem do theoviz (>= 0.4.1), sempre no modo escuro: o
 # artigo vai ao ar na pagina escura do site. Nao defina cor literal aqui, com
 # uma excecao documentada abaixo (a rampa do mapa).
 
 library(ggplot2)
 suppressPackageStartupMessages(library(theoviz))
+# 0.4.1 (2026-11-10): tabela_gt() com `headers=` apontando para ids que existem
+# (exige gt >= 1.4.0); a 0.4.0 deixava ids orfaos nas tabelas. Mesma guarda
+# dos outros temas do site (anuario.R, cargos.R, slu.R).
+if (packageVersion("theoviz") < "0.4.1")
+  stop("o tema do destino do lixo exige theoviz >= 0.4.1 (headers= validos nas tabelas).")
 # LARGURA_SVG e ajustar_textos(). No site o arquivo mora em quarto/_temas/
 # (comum aos temas com ggiraph); no projeto, em R/. Mesma regra do dados().
 source(Find(file.exists, file.path(here::here(), c("_temas", "R"), "girafe_celular.R")))
